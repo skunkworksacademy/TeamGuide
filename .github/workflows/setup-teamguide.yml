@@ -1,0 +1,163 @@
+name: TeamGuide Setup
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  setup-project:
+    runs-on: ubuntu-latest
+    
+    env:
+      REQUIRED_FILES: |
+        README.md
+        CONTRIBUTING.md
+        docs/introduction.md
+        docs/organization.md
+        docs/course-layout.md
+        docs/multimedia.md
+        docs/frameworks.md
+        docs/evaluation.md
+      REQUIRED_DIRS: |
+        docs
+        media
+        assets/images
+        assets/graphics
+      FILE_PERMISSIONS: 644
+      DIR_PERMISSIONS: 755
+    
+    steps:
+      - name: Set Force Setup Flag
+        run: echo "FORCE_SETUP=" >> $GITHUB_ENV
+      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      
+      # Check if required files and directories exist
+      - name: Check Required Files
+        id: check_files
+        run: |
+          missing_files=()
+          
+          echo "Checking required files..."
+          for file in $REQUIRED_FILES; do
+            if [ ! -f "$file" ]; then
+              echo "Missing file: $file"
+              missing_files+=("$file")
+            fi
+          done
+          
+          echo "Checking required directories..."
+          for dir in $REQUIRED_DIRS; do
+            if [ ! -d "$dir" ]; then
+              echo "Missing directory: $dir"
+              missing_files+=("$dir")
+            fi
+          done
+          
+          if [ ${#missing_files[@]} -ne 0 ]; then
+            echo "setup_needed=true" >> $GITHUB_OUTPUT
+            echo "The following files or directories are missing:"
+            printf '%s\n' "${missing_files[@]}"
+          else
+            echo "setup_needed=false" >> $GITHUB_OUTPUT
+            echo "All required files and directories exist."
+          fi
+      
+      # Create missing directories
+      - name: Create Required Directories
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
+        run: |
+          for dir in $REQUIRED_DIRS; do
+            if [ ! -d "$dir" ]; then
+              mkdir -p "$dir"
+              echo "Created directory: $dir"
+            fi
+          done
+      
+      # Create missing files if needed
+      - name: Create Missing Files
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
+        run: |
+          for file in $REQUIRED_FILES; do
+            if [ ! -f "$file" ]; then
+              dirname=$(dirname "$file")
+              if [ ! -d "$dirname" ]; then
+                mkdir -p "$dirname"
+              fi
+              
+              # Create basic content based on filename
+              filename=$(basename "$file")
+              echo "# ${filename%.*}" > "$file"
+              echo "Created file: $file"
+            fi
+          done
+      
+      # Set correct permissions
+      - name: Set File Permissions
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
+        run: |
+          find . -type f -name "*.md" -exec chmod $FILE_PERMISSIONS {} \;
+          for dir in $REQUIRED_DIRS; do
+            if [ -d "$dir" ]; then
+              chmod $DIR_PERMISSIONS "$dir"
+            fi
+          done
+      
+      # Commit changes if any were made
+      - name: Commit Changes
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Setup repository structure with required files and directories"
+            git push
+          fi
+      
+      # Notify on failure (only if something went wrong)
+      - name: Send Email on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: TeamGuide Setup Failed - Run ID: ${{ github.run_id }}
+          to: ${{ secrets.MAIL_RECIPIENT }}
+          from: TeamGuide Bot <${{ secrets.MAIL_USERNAME }}>
+          body: |
+            The TeamGuide setup workflow failed!
+            Run ID: ${{ github.run_id }}
+            Repository: ${{ github.repository }}
+            Please check the workflow logs for details.
+      
+      # Create an issue if failure (this has been fixed)
+      - name: Create Issue on Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'TeamGuide Setup Workflow Failed',
+                body: `The TeamGuide setup workflow failed. Please check the logs for details.\n\nRun ID: ${{ github.run_id }}`
+              });
+            } catch (error) {
+              console.error('Failed to create issue:', error.message);
+            }
