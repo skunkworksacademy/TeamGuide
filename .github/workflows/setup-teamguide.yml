@@ -322,13 +322,13 @@ jobs:
             Run ID: ${{ github.run_id }}
             Repository: ${{ github.repository }}
             Please check the workflow logs for details.
-      - name: Create issue on failure
+        - name: Create issue on failure
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
             try {
-              github.rest.issues.create({
+              await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: 'TeamGuide Setup Workflow Failed',
@@ -336,7 +336,4 @@ jobs:
               });
             } catch (error) {
               console.error('Failed to create issue:', error.message);
-            }repo: context.repo.repo,
-              title: 'TeamGuide Setup Workflow Failed',
-              body: `The TeamGuide setup workflow failed. Please check the logs for details.\n\nRun ID: ${{ github.run_id }}`
-            })
+            }
