@@ -1,29 +1,14 @@
-name: Setup TeamGuide
+name: TeamGuide Setup
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
-    inputs:
-      force_setup:
-        description: 'Force setup even if files exist (true/false)'
-        required: false
-        default: 'false'
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
 
 jobs:
   setup-project:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    
     env:
       REQUIRED_FILES: |
         README.md
@@ -39,226 +24,129 @@ jobs:
         media
         assets/images
         assets/graphics
-      FILE_PERMISSIONS: '644'
-      DIR_PERMISSIONS: '755'
-
+      FILE_PERMISSIONS: 644
+      DIR_PERMISSIONS: 755
+    
     steps:
-      - name: Set FORCE_SETUP environment variable
-        run: echo "FORCE_SETUP=${{ github.event.inputs.force_setup }}" >> $GITHUB_ENV
-
-      - name: Checkout code
+      - name: Set Force Setup Flag
+        run: echo "FORCE_SETUP=" >> $GITHUB_ENV
+      
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Node.js
+      
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install markdownlint and prettier
+          node-version: 20
+          cache: npm
+      
+      # Check if required files and directories exist
+      - name: Check Required Files
+        id: check_files
         run: |
-          npm install -g markdownlint-cli prettier
-
-      - name: Ensure Markdownlint configuration
-        run: |
-          echo '{
-            "default": true,
-            "MD013": false,
-            "MD041": false
-          }' > .markdownlint.json
-
-      - name: Ensure Prettier configuration
-        run: |
-          echo '{
-            "semi": true,
-            "trailingComma": "es5",
-            "singleQuote": true,
-            "printWidth": 80
-          }' > .prettierrc
-
-      - name: Check existing structure
-        id: check-structure
-        run: |
-          MISSING_DIRS=""
-          for dir in $REQUIRED_DIRS; do
-            [[ ! -d "$dir" ]] && MISSING_DIRS="$MISSING_DIRS $dir"
-          done
-          echo "missing_dirs=$MISSING_DIRS" >> $GITHUB_OUTPUT
-
-          MISSING_FILES=""
+          missing_files=()
+          
+          echo "Checking required files..."
           for file in $REQUIRED_FILES; do
-            [[ ! -f "$file" ]] && MISSING_FILES="$MISSING_FILES $file"
-          done
-          echo "missing_files=$MISSING_FILES" >> $GITHUB_OUTPUT
-
-          DUPLICATES=$(find . -type f -name "*.md" \( -path "./*" ! -path "./docs/*" ! -path "./README.md" ! -path "./CONTRIBUTING.md" \))
-          echo "duplicates=$DUPLICATES" >> $GITHUB_OUTPUT
-
-      - name: Create missing directories
-        if: ${{ steps.check-structure.outputs.missing_dirs != '' }}
-        run: |
-          for dir in ${{ steps['check-structure'].outputs.missing_dirs }}; do
-            mkdir -p "$dir"
-          done
-
-      - name: Handle duplicate files
-        if: ${{ steps.check-structure.outputs.duplicates != '' }}
-        run: |
-          BACKUP_DIR=".backup/$(date +%Y%m%d_%H%M%S)"
-          mkdir -p "$BACKUP_DIR"
-          for file in ${{ steps['check-structure'].outputs.duplicates }}; do
-            mv "$file" "$BACKUP_DIR/"
-          done
-
-      - name: Create or update README.md
-        run: |
-          if [[ "${{ github.event.inputs.force_setup }}" == "true" ]] || [[ ! -f README.md ]]; then
-            cat << 'EOF' > README.md
-            # TeamGuide
-
-            ![Build Status](https://img.shields.io/badge/build-passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
-
-            ![Logo](assets/images/logo.png)
-
-            Welcome to TeamGuide! We make productive use of tools for course development, including organization strategies, multimedia engagement, and continuous enhancement for effective learning.
-
-            ## Contents
-
-            - Introduction to Modern Learning
-            - Organization Strategies
-            - Course Layout
-            - Multimedia Development
-            - Implementing Learning Frameworks
-            - Evaluation and Improvement
-
-            ## Getting Started
-
-            1. Clone the repo.
-            2. Review the course outline.
-            3. Start collaborating!
-
-            ## Contributing
-
-            We welcome contributions. Check the issues and submit pull requests.
-            EOF
-          fi
-
-      - name: Create or update documentation files
-        run: |
-          declare -A DOC_FILES=(
-            ["docs/introduction.md"]="Introduction to Modern Learning\n\nDetails about modern learning strategies."
-            ["docs/organization.md"]="Organization Strategies\n\nBest practices for team organization."
-            ["docs/course-layout.md"]="Course Layout\n\nStructure and design of the course."
-            ["docs/multimedia.md"]="Multimedia Development\n\nGuidelines for creating multimedia content."
-            ["docs/frameworks.md"]="Implementing Learning Frameworks\n\nFrameworks for effective learning."
-            ["docs/evaluation.md"]="Evaluation and Improvement\n\nMethods for evaluating and improving courses."
-          )
-          for file in "${!DOC_FILES[@]}"; do
-            if [[ "${{ github.event.inputs.force_setup }}" == "true" ]] || [[ ! -f "$file" ]]; then
-              echo -e "${DOC_FILES[$file]}" > "$file"
+            if [ ! -f "$file" ]; then
+              echo "Missing file: $file"
+              missing_files+=("$file")
             fi
           done
-
-      - name: Create or update CONTRIBUTING.md
-        run: |
-          if [[ "${{ github.event.inputs.force_setup }}" == "true" ]] || [[ ! -f CONTRIBUTING.md ]]; then
-            cat << 'EOF' > CONTRIBUTING.md
-            # Contributing to TeamGuide
-
-            Thank you for your interest in contributing! Please follow these steps:
-
-            1. Fork the repository.
-            2. Create a new branch (`git checkout -b feature/your-feature`).
-            3. Commit your changes (`git commit -m 'Add your feature'`).
-            4. Push to the branch (`git push origin feature/your-feature`).
-            5. Open a pull request.
-
-            Please ensure your code adheres to our style guidelines and includes relevant tests.
-            EOF
-          fi
-
-      - name: Format Markdown files
-        run: prettier --write "**/*.md"
-
-      - name: Lint Markdown files
-        run: |
-          markdownlint --config .markdownlint.json "**/*.md" || markdownlint --fix --config .markdownlint.json "**/*.md"
-
-      - name: Check for changes
-        id: git-check
-        run: |
-          git add .
-          if [[ -n $(git status --porcelain) ]]; then
-            echo "changes=true" >> $GITHUB_OUTPUT
+          
+          echo "Checking required directories..."
+          for dir in $REQUIRED_DIRS; do
+            if [ ! -d "$dir" ]; then
+              echo "Missing directory: $dir"
+              missing_files+=("$dir")
+            fi
+          done
+          
+          if [ ${#missing_files[@]} -ne 0 ]; then
+            echo "setup_needed=true" >> $GITHUB_OUTPUT
+            echo "The following files or directories are missing:"
+            printf '%s\n' "${missing_files[@]}"
           else
-            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "setup_needed=false" >> $GITHUB_OUTPUT
+            echo "All required files and directories exist."
           fi
-
-      - name: Commit and push changes
-        if: steps.git-check.outputs.changes == 'true'
+      
+      # Create missing directories
+      - name: Create Required Directories
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
         run: |
-          git config --global user.name 'GitHub Actions'
-          git config --global user.email 'actions@github.com'
-          git commit -m "Automated setup updates"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate summary
+          for dir in $REQUIRED_DIRS; do
+            if [ ! -d "$dir" ]; then
+              mkdir -p "$dir"
+              echo "Created directory: $dir"
+            fi
+          done
+      
+      # Create missing files if needed
+      - name: Create Missing Files
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
         run: |
-          echo "## TeamGuide Setup Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Missing directories created: ${{ steps.check-structure.outputs.missing_dirs }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Missing files created: ${{ steps.check-structure.outputs.missing_files }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Duplicates handled: ${{ steps.check-structure.outputs.duplicates }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Changes committed: ${{ steps.git-check.outputs.changes }}" >> $GITHUB_STEP_SUMMARY
-
-      # Send email notification on success
-      # Note: Ensure the following secrets are configured in your repository settings:
-      # - EMAIL_USERNAME: The email address used for sending notifications.
-      # - EMAIL_PASSWORD: The password or app-specific password for the email account.
-      - name: Notify shared mailbox on success
-        if: success() && steps.git-check.outputs.changes == 'true'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.office365.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: 'TeamGuide Setup Successful - Run ID: ${{ github.run_id }}'
-          to: dev@skunkworks.africa
-          from: TeamGuide Bot <dev@skunkworks.africa>
-          body: |
-            The TeamGuide project structure was updated successfully!
-            Run ID: ${{ github.run_id }}
-            Repository: ${{ github.repository }}
-            Commit: ${{ github.sha }}
-            Summary:
-            - Missing directories: ${{ steps.check-structure.outputs.missing_dirs }}
-            - Missing files: ${{ steps.check-structure.outputs.missing_files }}
-            - Duplicates handled: ${{ steps.check-structure.outputs.duplicates }}
-            Check the repository for details.
-        continue-on-error: true
-
-      # Send email notification on failure
-      - name: Notify shared mailbox on failure
+          for file in $REQUIRED_FILES; do
+            if [ ! -f "$file" ]; then
+              dirname=$(dirname "$file")
+              if [ ! -d "$dirname" ]; then
+                mkdir -p "$dirname"
+              fi
+              
+              # Create basic content based on filename
+              filename=$(basename "$file")
+              echo "# ${filename%.*}" > "$file"
+              echo "Created file: $file"
+            fi
+          done
+      
+      # Set correct permissions
+      - name: Set File Permissions
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
+        run: |
+          find . -type f -name "*.md" -exec chmod $FILE_PERMISSIONS {} \;
+          for dir in $REQUIRED_DIRS; do
+            if [ -d "$dir" ]; then
+              chmod $DIR_PERMISSIONS "$dir"
+            fi
+          done
+      
+      # Commit changes if any were made
+      - name: Commit Changes
+        if: steps.check_files.outputs.setup_needed == 'true' || env.FORCE_SETUP != ''
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Setup repository structure with required files and directories"
+            git push
+          fi
+      
+      # Notify on failure (only if something went wrong)
+      - name: Send Email on Failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.office365.com
           server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: 'TeamGuide Setup Failed - Run ID: ${{ github.run_id }}'
-          to: dev@skunkworks.africa
-          from: TeamGuide Bot <dev@skunkworks.africa>
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: TeamGuide Setup Failed - Run ID: ${{ github.run_id }}
+          to: ${{ secrets.MAIL_RECIPIENT }}
+          from: TeamGuide Bot <${{ secrets.MAIL_USERNAME }}>
           body: |
             The TeamGuide setup workflow failed!
             Run ID: ${{ github.run_id }}
             Repository: ${{ github.repository }}
             Please check the workflow logs for details.
-      - name: Create issue on failure
+      
+      # Create an issue if failure (this has been fixed)
+      - name: Create Issue on Failure
         if: failure()
         uses: actions/github-script@v7
         with:
@@ -272,7 +160,4 @@ jobs:
               });
             } catch (error) {
               console.error('Failed to create issue:', error.message);
-            }repo: context.repo.repo,
-              title: 'TeamGuide Setup Workflow Failed',
-              body: `The TeamGuide setup workflow failed. Please check the logs for details.\n\nRun ID: ${{ github.run_id }}`
-            })
+            }
