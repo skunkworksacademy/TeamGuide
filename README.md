@@ -1,22 +1,26 @@
-# Team Guide for Course Development
+# TeamGuide
 
-## Overview
-This repository contains comprehensive documentation and resources for creating effective educational courses using modern frameworks and tools. It serves as a central knowledge base for our team to maintain consistency and quality in course development.
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Structure
-- **docs/**: Detailed documentation on various aspects of course development
-- **assets/**: Images, graphics, and other resources used in the documentation
-- **CONTRIBUTING.md**: Guidelines for contributing to this repository
+![Logo](assets/images/logo.png)
+
+Welcome to TeamGuide! We make productive use of tools for course development, including organization strategies, multimedia engagement, and continuous enhancement for effective learning.
+
+## Contents
+
+- Introduction to Modern Learning
+- Organization Strategies
+- Course Layout
+- Multimedia Development
+- Implementing Learning Frameworks
+- Evaluation and Improvement
 
 ## Getting Started
-Begin by reading the [Introduction](docs/introduction.md) to understand our educational philosophy and approach to course development.
 
-## Key Topics
-- Course organization and structure
-- Multimedia integration
-- Educational frameworks implementation
-- Evaluation techniques
-- Tools and platforms integration
+1. Clone the repo.
+2. Review the course outline.
+3. Start collaborating!
 
-## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+## Contributing
+
+We welcome contributions. Check the issues and submit pull requests.
