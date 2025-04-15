@@ -1,0 +1,342 @@
+name: Setup TeamGuide
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_setup:
+        description: 'Force setup even if files exist (true/false)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  setup-project:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      REQUIRED_FILES: |
+        README.md
+        CONTRIBUTING.md
+        docs/introduction.md
+        docs/organization.md
+        docs/course-layout.md
+        docs/multimedia.md
+        docs/frameworks.md
+        docs/evaluation.md
+      REQUIRED_DIRS: |
+        docs
+        media
+        assets/images
+        assets/graphics
+      FILE_PERMISSIONS: '644'
+      DIR_PERMISSIONS: '755'
+
+    steps:
+      - name: Set FORCE_SETUP environment variable
+        run: echo "FORCE_SETUP=${{ github.event.inputs.force_setup }}" >> $GITHUB_ENV
+      # Checkout the repository with full history for accurate diff
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Set up Node.js for Markdown linting and processing
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Install dependencies with retry logic
+      - name: Install markdownlint and prettier
+        run: |
+          for i in {1..3}; do
+            npm install -g markdownlint-cli prettier && break
+            echo "Retry $i: Installation failed, retrying in $((2 ** i)) seconds..."
+            sleep $((2 ** i))
+          done
+        continue-on-error: false
+
+      # Create or update .markdownlint.json
+      - name: Ensure Markdownlint configuration
+        run: |
+          cat << 'EOF' > .markdownlint.json
+          {
+            "default": true,
+            "MD013": false,
+            "MD041": false
+          }
+          EOF
+
+      # Create or update .prettierrc
+      - name: Ensure Prettier configuration
+        run: |
+          cat << 'EOF' > .prettierrc
+          {
+            "semi": true,
+            "trailingComma": "es5",
+            "singleQuote": true,
+            "printWidth": 80
+          }
+          EOF
+
+      # Validate existing files and directories
+      - name: Check existing structure
+        id: check-structure
+        run: |
+          echo "Checking directories..."
+          MISSING_DIRS=""
+          for dir in $REQUIRED_DIRS; do
+            if [[ ! -d "$dir" ]]; then
+              MISSING_DIRS="$MISSING_DIRS $dir"
+            fi
+          done
+          echo "missing_dirs=$MISSING_DIRS" >> $GITHUB_OUTPUT
+
+          echo "Checking files..."
+          MISSING_FILES=""
+          for file in $REQUIRED_FILES; do
+            if [[ ! -f "$file" ]]; then
+              MISSING_FILES="$MISSING_FILES $file"
+            fi
+          done
+          echo "missing_files=$MISSING_FILES" >> $GITHUB_OUTPUT
+
+          echo "Checking for duplicates..."
+          DUPLICATES=$(find . -type f -name "*.md" \( -path "./*" ! -path "./docs/*" ! -path "./README.md" ! -path "./CONTRIBUTING.md" \))
+          echo "duplicates=$DUPLICATES" >> $GITHUB_OUTPUT
+
+      # Create missing directories
+      - name: Create missing directories
+        if: ${{ steps.check-structure.outputs.missing_dirs != '' }}
+        run: |
+          for dir in ${{ steps['check-structure'].outputs.missing_dirs }}; do
+            mkdir -p "$dir"
+            echo "Created directory: $dir"
+          done
+
+      # Handle duplicate files (move to backup)
+      - name: Handle duplicate files
+        if: ${{ steps.check-structure.outputs.duplicates != '' }}
+        run: |
+          BACKUP_DIR=".backup/$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP_DIR"
+          for file in ${{ steps['check-structure'].outputs.duplicates }}; do
+            mv "$file" "$BACKUP_DIR/"
+            echo "Moved duplicate file $file to $BACKUP_DIR"
+          done
+
+      # Create or update README.md
+      - name: Create or update README.md
+        run: |
+          if [[ "${{ github.event.inputs.force_setup }}" == "true" ]] || [[ ! -f README.md ]]; then
+            cat << 'EOF' > README.md
+            # TeamGuide
+
+            ![Build Status](https://img.shields.io/badge/build-passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)
+
+            ![Logo](assets/images/logo.png)
+
+            Welcome to TeamGuide! We make productive use of tools for course development, including organization strategies, multimedia engagement, and continuous enhancement for effective learning.
+
+            ## Contents
+
+            - Introduction to Modern Learning
+            - Organization Strategies
+            - Course Layout
+            - Multimedia Development
+            - Implementing Learning Frameworks
+            - Evaluation and Improvement
+
+            ## Getting Started
+
+            1. Clone the repo.
+            2. Review the course outline.
+            3. Start collaborating!
+
+            ## Contributing
+
+            We welcome contributions. Check the issues and submit pull requests.
+            EOF
+            echo "Created/updated README.md"
+          else
+            echo "README.md already exists, skipping (use force_setup to override)"
+          fi
+
+      # Create or update documentation files
+      - name: Create or update documentation files
+        run: |
+          declare -A DOC_FILES=(
+            ["docs/introduction.md"]="Introduction to Modern Learning\n\nDetails about modern learning strategies."
+            ["docs/organization.md"]="Organization Strategies\n\nBest practices for team organization."
+            ["docs/course-layout.md"]="Course Layout\n\nStructure and design of the course."
+            ["docs/multimedia.md"]="Multimedia Development\n\nGuidelines for creating multimedia content."
+            ["docs/frameworks.md"]="Implementing Learning Frameworks\n\nFrameworks for effective learning."
+            ["docs/evaluation.md"]="Evaluation and Improvement\n\nMethods for evaluating and improving courses."
+          )
+          for file in "${!DOC_FILES[@]}"; do
+            if [[ "$(echo "${{ github.event.inputs.force_setup }}" | tr '[:upper:]' '[:lower:]')" == "true" ]] || [[ ! -f "$file" ]]; then
+              echo -e "${DOC_FILES[$file]}" > "$file"
+              echo "Created/updated $file"
+            else
+              echo "$file already exists, skipping (use force_setup to override)"
+            fi
+          done
+
+      # Create or update CONTRIBUTING.md
+      - name: Create or update CONTRIBUTING.md
+        run: |
+          if [[ "${{ github.event.inputs.force_setup }}" == "true" ]] || [[ ! -f CONTRIBUTING.md ]]; then
+            cat << 'EOF' > CONTRIBUTING.md
+            # Contributing to TeamGuide
+
+            Thank you for your interest in contributing! Please follow these steps:
+
+            1. Fork the repository.
+            2. Create a new branch (`git checkout -b feature/your-feature`).
+            3. Commit your changes (`git commit -m 'Add your feature'`).
+            4. Push to the branch (`git push origin feature/your-feature`).
+            5. Open a pull request.
+
+            Please ensure your code adheres to our style guidelines and includes relevant tests.
+            EOF
+            echo "Created/updated CONTRIBUTING.md"
+          else
+            echo "CONTRIBUTING.md already exists, skipping (use force_setup to override)"
+          fi
+
+      # Format Markdown files with Prettier
+      - name: Format Markdown files
+        run: |
+          prettier --write "**/*.md"
+        continue-on-error: true
+
+      # Validate Markdown syntax
+      - name: Lint Markdown files
+        run: |
+          markdownlint --config .markdownlint.json "**/*.md" || {
+            echo "Markdown linting failed, attempting auto-fix..."
+            markdownlint --fix --config .markdownlint.json "**/*.md"
+            echo "Auto-fix applied, re-running lint..."
+            markdownlint --config .markdownlint.json "**/*.md" || {
+              echo "Markdown linting still failed after auto-fix. Exiting with error."
+              exit 1
+            }
+          }
+          FILE_PERMISSIONS=${{ env.FILE_PERMISSIONS || '644' }}
+          DIR_PERMISSIONS=${{ env.DIR_PERMISSIONS || '755' }}
+          find . -type f -name "*.md" -exec chmod "$FILE_PERMISSIONS" {} \;
+          find . -type d -exec chmod "$DIR_PERMISSIONS" {} \;
+          echo "Set consistent permissions ($FILE_PERMISSIONS for files, $DIR_PERMISSIONS for directories)"
+          FILE_PERMISSIONS=${{ env.FILE_PERMISSIONS || '644' }}
+          DIR_PERMISSIONS=${{ env.DIR_PERMISSIONS || '755' }}
+          find . -type f -name "*.md" -exec chmod "$FILE_PERMISSIONS" {} \;
+          find . -type d -exec chmod "$DIR_PERMISSIONS" {} \;
+          echo "Set consistent permissions ($FILE_PERMISSIONS for files, $DIR_PERMISSIONS for directories)"
+      - name: Check for changes
+        id: git-check
+        run: |
+          git add .
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Commit and push changes with retry logic
+      - name: Commit and push changes
+        if: steps.git-check.outputs.changes == 'true'
+        run: |
+          git config --global user.name 'GitHub Actions'
+          for i in {1..3}; do
+            git push && break
+            echo "Retry $i: Push failed, retrying in $((2 ** i)) seconds..."
+            sleep $((2 ** i))
+          done
+            sleep 5
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Generate summary report
+      - name: Generate summary
+        run: |
+          echo "## TeamGuide Setup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Missing directories created: ${{ steps.check-structure.outputs.missing_dirs }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Missing files created: ${{ steps.check-structure.outputs.missing_files }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Duplicates handled: ${{ steps.check-structure.outputs.duplicates }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Changes committed: ${{ steps.git-check.outputs.changes }}" >> $GITHUB_STEP_SUMMARY
+
+      # Send email notification on success
+      # Note: Ensure the following secrets are configured in your repository settings:
+      # - EMAIL_USERNAME: The email address used for sending notifications.
+      # - EMAIL_PASSWORD: The password or app-specific password for the email account.
+      - name: Notify shared mailbox on success
+        if: success() && steps.git-check.outputs.changes == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: 'TeamGuide Setup Successful - Run ID: ${{ github.run_id }}'
+          to: dev@skunkworks.africa
+          from: TeamGuide Bot <dev@skunkworks.africa>
+          body: |
+            The TeamGuide project structure was updated successfully!
+            Run ID: ${{ github.run_id }}
+            Repository: ${{ github.repository }}
+            Commit: ${{ github.sha }}
+            Summary:
+            - Missing directories: ${{ steps.check-structure.outputs.missing_dirs }}
+            - Missing files: ${{ steps.check-structure.outputs.missing_files }}
+            - Duplicates handled: ${{ steps.check-structure.outputs.duplicates }}
+            Check the repository for details.
+        continue-on-error: true
+
+      # Send email notification on failure
+      - name: Notify shared mailbox on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: 'TeamGuide Setup Failed - Run ID: ${{ github.run_id }}'
+          to: dev@skunkworks.africa
+          from: TeamGuide Bot <dev@skunkworks.africa>
+          body: |
+            The TeamGuide setup workflow failed!
+            Run ID: ${{ github.run_id }}
+            Repository: ${{ github.repository }}
+            Please check the workflow logs for details.
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'TeamGuide Setup Workflow Failed',
+                body: `The TeamGuide setup workflow failed. Please check the logs for details.\n\nRun ID: ${{ github.run_id }}`
+              });
+            } catch (error) {
+              console.error('Failed to create issue:', error.message);
+            }repo: context.repo.repo,
+              title: 'TeamGuide Setup Workflow Failed',
+              body: `The TeamGuide setup workflow failed. Please check the logs for details.\n\nRun ID: ${{ github.run_id }}`
+            })
