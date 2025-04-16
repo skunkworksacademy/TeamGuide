@@ -2,7 +2,7 @@
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue)  
 
-![Logo](assets/images/logo.svg)  
+![Logo](assets/images/logo.png)  
 
 ## 🚀 Welcome to TeamGuide!  
 
